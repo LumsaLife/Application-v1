@@ -2,13 +2,14 @@
   "name": "lumsa",
   "version": "0.1.0",
   "private": true,
-  "description": "Lumsa — a spiritual meditation companion that reflects your actual day back to you.",
+  "description": "Lumsa \u2014 a spiritual meditation companion that reflects your actual day back to you.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "tsx scripts/verify-logic.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
@@ -29,6 +30,7 @@
     "tailwindcss": "^4.1.13",
     "@tailwindcss/postcss": "^4.1.13",
     "typescript": "^5.9.2",
-    "@eslint/eslintrc": "^3.3.1"
+    "@eslint/eslintrc": "^3.3.1",
+    "tsx": "^4.20.6"
   }
 }

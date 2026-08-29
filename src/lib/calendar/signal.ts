@@ -108,6 +108,9 @@ export function buildCalendarSignal(
     }
   }
 
+  // Ties resolve to the earliest part of the day. An evenly-loaded day has no
+  // true centre of gravity, and leaning early gives the practice something to
+  // prepare the person *for* rather than something to look back on.
   const heaviestPart = (() => {
     const max = Math.max(buckets.morning, buckets.afternoon, buckets.evening);
     if (max === 0) return "none" as const;

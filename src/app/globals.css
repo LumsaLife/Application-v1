@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+/*
+ * Lumsa's palette.
+ *
+ * Two grounds, one token set. Light is warm cream — paper at dawn. Dark is deep
+ * indigo-black — candlelight. Gold carries across both, but it is NOT the same
+ * gold: on cream it has to darken to stay legible, on night it lifts to glow.
+ * That asymmetry is the reason the accent is a token rather than a constant.
+ *
+ * Theme resolution has three states:
+ *   - no attribute  → follow the OS (prefers-color-scheme)
+ *   - data-theme="light" / "dark" → explicit user override from Settings
+ * Every colour is defined on bare :root first so nothing depends on a media
+ * query having matched.
+ */
+
+:root {
+  /* Grounds */
+  --canvas: #faf6ef;
+  --surface: #fffdf8;
+  --surface-raised: #f4ecdd;
+  --border: rgba(30, 26, 22, 0.11);
+  --border-strong: rgba(30, 26, 22, 0.2);
+
+  /* Ink */
+  --text: #1e1a16;
+  --text-muted: #6b6154;
+  --text-faint: #9a9082;
+
+  /* Gold — darkened for contrast against cream (4.5:1 on --canvas) */
+  --gold: #8a6410;
+  --gold-bright: #b8860b;
+  --gold-soft: rgba(184, 134, 11, 0.13);
+  --gold-glow: rgba(184, 134, 11, 0.28);
+
+  /* Feedback */
+  --danger: #9b2c1f;
+  --success: #2f6b3f;
+
+  --shadow-soft: 0 1px 2px rgba(30, 26, 22, 0.05),
+    0 8px 24px -12px rgba(30, 26, 22, 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0f0e13;
+    --surface: #16141c;
+    --surface-raised: #1e1b26;
+    --border: rgba(242, 237, 228, 0.1);
+    --border-strong: rgba(242, 237, 228, 0.2);
+
+    --text: #f2ede4;
+    --text-muted: #a39c90;
+    --text-faint: #726b60;
+
+    /* On night, gold lifts rather than darkens */
+    --gold: #e8c566;
+    --gold-bright: #f2d489;
+    --gold-soft: rgba(232, 197, 102, 0.11);
+    --gold-glow: rgba(232, 197, 102, 0.22);
+
+    --danger: #e08b7d;
+    --success: #86c39a;
+
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4),
+      0 8px 32px -12px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* Explicit override wins in both directions */
+:root[data-theme="dark"] {
+  --canvas: #0f0e13;
+  --surface: #16141c;
+  --surface-raised: #1e1b26;
+  --border: rgba(242, 237, 228, 0.1);
+  --border-strong: rgba(242, 237, 228, 0.2);
+
+  --text: #f2ede4;
+  --text-muted: #a39c90;
+  --text-faint: #726b60;
+
+  --gold: #e8c566;
+  --gold-bright: #f2d489;
+  --gold-soft: rgba(232, 197, 102, 0.11);
+  --gold-glow: rgba(232, 197, 102, 0.22);
+
+  --danger: #e08b7d;
+  --success: #86c39a;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 8px 32px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* Expose the tokens to Tailwind utilities: bg-canvas, text-muted, border-border… */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+
+  --color-gold: var(--gold);
+  --color-gold-bright: var(--gold-bright);
+  --color-gold-soft: var(--gold-soft);
+
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  color-scheme: light;
+}
+:root[data-theme="dark"],
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+  }
+}
+
+body {
+  background-color: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Focus ring — gold, generous, never removed */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+::selection {
+  background: var(--gold-glow);
+  color: var(--text);
+}
+
+/*
+ * The breathing animation on the Today screen. Deliberately slow — roughly a
+ * 10-second cycle, close to a calm resting breath. Anything faster reads as a
+ * loading spinner and does the opposite of what it is there for.
+ */
+@keyframes lumsa-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.9;
+  }
+}
+
+.animate-breathe {
+  animation: lumsa-breathe 10s ease-in-out infinite;
+}
+
+@keyframes lumsa-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: lumsa-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Anyone who has asked for less motion gets none of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
