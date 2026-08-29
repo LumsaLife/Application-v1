@@ -10,39 +10,18 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { z } from "zod";
 
 import { env } from "@/lib/env";
+import { MAX_TOKENS, MODEL, MeditationSchema } from "./model-config";
 import {
   MEDITATION_SYSTEM_PROMPT,
   buildUserMessage,
   type MeditationPromptInput,
 } from "./prompt";
-import { stripBreaks, totalBreakSeconds } from "./script-chunking";
+import { stripBreaks } from "./script-chunking";
+import { estimateDurationSeconds } from "./duration";
 
-const MODEL = "claude-opus-5";
-
-/**
- * Comfortably above what a 15-minute script needs (~1,200 words ≈ 1,800 tokens)
- * with room for adaptive thinking. Non-streaming is fine at this ceiling; the
- * SDK's default timeout covers it, and generation runs in a cron job where
- * nobody is watching a spinner.
- */
-const MAX_TOKENS = 16_000;
-
-const MeditationSchema = z.object({
-  script: z
-    .string()
-    .describe(
-      "The full meditation script, plain prose with paragraph breaks and " +
-        '<break time="Ns" /> tags for silence. No headings or markdown.',
-    ),
-  whyToday: z
-    .string()
-    .describe(
-      "One sentence explaining what in today's calendar shaped this practice.",
-    ),
-});
+export { estimateDurationSeconds };
 
 export interface GeneratedMeditation {
   script: string;
@@ -144,11 +123,4 @@ export function scriptForDisplay(script: string): string {
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-/** Rough spoken duration, used before real audio exists. */
-export function estimateDurationSeconds(script: string): number {
-  const words = scriptForDisplay(script).split(/\s+/).filter(Boolean).length;
-  const speechSeconds = (words / 105) * 60; // ~105 wpm for guided meditation
-  return Math.round(speechSeconds + totalBreakSeconds(script));
 }

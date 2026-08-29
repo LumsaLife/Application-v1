@@ -42,6 +42,12 @@ export async function updateSettings(payload: SettingsPayload) {
       theme_preference: payload.theme,
       reminder_email_enabled: payload.reminderEmailEnabled,
       timezone,
+      // Editing your inputs is the signal that you've fixed whatever the
+      // generator choked on, so clear the backoff rather than making someone
+      // who just corrected their mantra wait out a six-hour cooldown.
+      generation_failures: 0,
+      generation_failed_at: null,
+      generation_error: null,
     })
     .eq("user_id", user.id);
 
@@ -71,6 +77,16 @@ export async function regenerateToday() {
     .select("timezone")
     .eq("user_id", user.id)
     .single();
+
+  // An explicit regenerate is a deliberate retry — clear the backoff too.
+  await supabase
+    .from("profiles")
+    .update({
+      generation_failures: 0,
+      generation_failed_at: null,
+      generation_error: null,
+    })
+    .eq("user_id", user.id);
 
   const today = localDateString(new Date(), profile?.timezone ?? "UTC");
 

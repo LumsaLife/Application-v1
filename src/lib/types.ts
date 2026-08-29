@@ -40,6 +40,9 @@ export interface Profile {
   theme_preference: ThemePreference;
   reminder_email_enabled: boolean;
   onboarded_at: string | null;
+  generation_failures: number;
+  generation_failed_at: string | null;
+  generation_error: string | null;
   created_at: string;
   updated_at: string;
 }

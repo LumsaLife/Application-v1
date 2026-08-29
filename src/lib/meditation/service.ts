@@ -21,6 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getTodaySignal } from "@/lib/calendar";
 import { forStorage } from "@/lib/calendar/signal";
 import { localDateString } from "@/lib/time";
+import { generationCooldownMs } from "@/lib/backoff";
 import type { DailyMeditation, Profile } from "@/lib/types";
 import { generateMeditation, estimateDurationSeconds } from "./generate";
 import { synthesizeAndStore } from "./tts";
@@ -33,9 +34,24 @@ export const MAX_AUDIO_ATTEMPTS = 3;
 
 /**
  * A row claimed longer ago than this had its worker die mid-synthesis (function
- * timeout, deploy). Comfortably longer than the slowest legitimate synthesis.
+ * timeout, deploy). Comfortably longer than the slowest legitimate synthesis,
+ * so we never steal a job from a worker that is still running.
  */
 const CLAIM_STALE_MS = 10 * 60 * 1000;
+
+/** Thrown when a profile is inside its failure cooldown. */
+export class GenerationCooldownError extends Error {
+  constructor(
+    readonly previousError: string | null,
+    readonly retryAt: Date,
+  ) {
+    super(
+      previousError ??
+        "Generation failed recently and is waiting before trying again.",
+    );
+    this.name = "GenerationCooldownError";
+  }
+}
 
 export interface EnsureResult {
   meditation: DailyMeditation;
@@ -71,6 +87,26 @@ export async function ensureTodaysScript(
     return { meditation: existing as DailyMeditation, created: false };
   }
 
+  // Nothing to generate from, and the model would only invent one. Cheaper and
+  // more honest to send them back to onboarding.
+  if (!profile.mantra.trim() && !profile.life_quest.trim()) {
+    throw new Error(
+      "This profile has no mantra or intention yet — finish onboarding first.",
+    );
+  }
+
+  // Refuse to retry inside the cooldown. Without this, a profile whose
+  // generation reliably fails costs a Claude call on every page load.
+  if (profile.generation_failures > 0 && profile.generation_failed_at) {
+    const failedAt = new Date(profile.generation_failed_at).getTime();
+    const retryAt = new Date(
+      failedAt + generationCooldownMs(profile.generation_failures),
+    );
+    if (retryAt.getTime() > Date.now()) {
+      throw new GenerationCooldownError(profile.generation_error, retryAt);
+    }
+  }
+
   const signal = await getTodaySignal({
     userId: profile.user_id,
     localDate,
@@ -91,20 +127,34 @@ export async function ensureTodaysScript(
     weekday: "long",
   }).format(new Date());
 
-  const generated = await generateMeditation({
-    displayName: profile.display_name,
-    mantra: profile.mantra,
-    lifeQuest: profile.life_quest,
-    tone: profile.tone_preference,
-    lengthMinutes: profile.meditation_length_pref,
-    signal,
-    weekday,
-    referenceEventsByName: profile.reference_events_by_name,
-    // Reversed so the model reads them oldest-first, matching the prompt.
-    recentReflections: (reflections ?? [])
-      .map((r) => r.reflection_text as string)
-      .reverse(),
-  });
+  let generated;
+  try {
+    generated = await generateMeditation({
+      displayName: profile.display_name,
+      mantra: profile.mantra,
+      lifeQuest: profile.life_quest,
+      tone: profile.tone_preference,
+      lengthMinutes: profile.meditation_length_pref,
+      signal,
+      weekday,
+      referenceEventsByName: profile.reference_events_by_name,
+      // Reversed so the model reads them oldest-first, matching the prompt.
+      recentReflections: (reflections ?? [])
+        .map((r) => r.reflection_text as string)
+        .reverse(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await supabase
+      .from("profiles")
+      .update({
+        generation_failures: profile.generation_failures + 1,
+        generation_failed_at: new Date().toISOString(),
+        generation_error: message.slice(0, 500),
+      })
+      .eq("user_id", profile.user_id);
+    throw error;
+  }
 
   const { data: inserted, error: insertError } = await supabase
     .from("daily_meditations")
@@ -139,6 +189,19 @@ export async function ensureTodaysScript(
     throw new Error(
       `Failed to save meditation: ${insertError?.message ?? "unknown error"}`,
     );
+  }
+
+  // Clear the failure state — but only when it is actually set, so the happy
+  // path stays a single insert with no extra write.
+  if (profile.generation_failures > 0) {
+    await supabase
+      .from("profiles")
+      .update({
+        generation_failures: 0,
+        generation_failed_at: null,
+        generation_error: null,
+      })
+      .eq("user_id", profile.user_id);
   }
 
   return { meditation: inserted as DailyMeditation, created: true };

@@ -24,6 +24,7 @@ import {
   totalBreakSeconds,
 } from "@/lib/meditation/script-chunking";
 import { runBatch } from "@/lib/batch";
+import { generationCooldownMs } from "@/lib/backoff";
 import type { NormalizedEvent } from "@/lib/calendar/signal";
 
 let failures = 0;
@@ -136,6 +137,7 @@ console.log("   empty: ", describeSignal(empty));
 void (async () => {
   await scriptChecks();
   await batchChecks();
+  cooldownChecks();
 
   console.log(
     failures === 0 ? "\nALL CHECKS PASSED\n" : `\n${failures} CHECK(S) FAILED\n`,
@@ -254,4 +256,21 @@ async function batchChecks() {
     handler: async () => {},
   });
   check("empty queue is a no-op", [empty.attempted, empty.deferred], [0, 0]);
+}
+
+function cooldownChecks() {
+  console.log("\n--- generation backoff ---");
+  const MIN = 60_000;
+
+  check("no failures → no wait", generationCooldownMs(0), 0);
+  check("negative is treated as none", generationCooldownMs(-1), 0);
+  check("1 failure → 30m", generationCooldownMs(1), 30 * MIN);
+  check("2 failures → 1h", generationCooldownMs(2), 60 * MIN);
+  check("3 failures → 2h", generationCooldownMs(3), 120 * MIN);
+  check("4 failures → 4h", generationCooldownMs(4), 240 * MIN);
+  // Caps, so a broken profile is retried a few times a day rather than never.
+  check("5 failures caps at 6h", generationCooldownMs(5), 360 * MIN);
+  check("20 failures still 6h", generationCooldownMs(20), 360 * MIN);
+  // Guards against overflow from an absurd counter value.
+  check("no overflow at large counts", Number.isFinite(generationCooldownMs(200)), true);
 }

@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "verify": "tsx scripts/verify-logic.ts"
+    "verify": "tsx scripts/verify-logic.ts",
+    "preview": "tsx scripts/preview-meditation.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",

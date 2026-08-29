@@ -1,8 +1,12 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AppNav } from "@/components/AppNav";
-import { ensureTodaysScript } from "@/lib/meditation/service";
+import {
+  GenerationCooldownError,
+  ensureTodaysScript,
+} from "@/lib/meditation/service";
 import { scriptForDisplay, estimateDurationSeconds } from "@/lib/meditation/generate";
 import { getPlaybackUrl } from "@/lib/meditation/tts";
 import { describeSignal } from "@/lib/calendar/signal";
@@ -40,14 +44,22 @@ export default async function TodayPage() {
    */
   let meditation: DailyMeditation | null = null;
   let generationError: string | null = null;
+  let retryAt: Date | null = null;
 
   try {
     const result = await ensureTodaysScript(profile);
     meditation = result.meditation;
   } catch (error) {
     console.error("[today] generation failed:", error);
-    generationError =
-      error instanceof Error ? error.message : "Something went wrong.";
+    if (error instanceof GenerationCooldownError) {
+      // Repeated failures — don't call Claude again on every refresh. Show what
+      // went wrong the first time and when we'll try again.
+      generationError = error.previousError;
+      retryAt = error.retryAt;
+    } else {
+      generationError =
+        error instanceof Error ? error.message : "Something went wrong.";
+    }
   }
 
   const admin = createAdminClient();
@@ -99,8 +111,12 @@ export default async function TodayPage() {
             </h1>
           </header>
 
-          {generationError ? (
-            <ErrorState message={generationError} />
+          {generationError !== null || retryAt ? (
+            <ErrorState
+              message={generationError}
+              retryAt={retryAt}
+              timeZone={profile.timezone}
+            />
           ) : meditation ? (
             <>
               <section className="space-y-3">
@@ -141,19 +157,52 @@ function StreakBadge({ days }: { days: number }) {
   );
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({
+  message,
+  retryAt,
+  timeZone,
+}: {
+  message: string | null;
+  retryAt: Date | null;
+  timeZone: string;
+}) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-6">
       <h2 className="font-display text-lg text-text">
         Today&rsquo;s practice didn&rsquo;t come through
       </h2>
+
       <p className="mt-2 text-[15px] leading-relaxed text-muted">
-        Refreshing usually sorts it. If it keeps happening, the details are
-        below.
+        {retryAt ? (
+          <>
+            We&rsquo;ve tried a few times, so we&rsquo;re pausing until{" "}
+            {new Intl.DateTimeFormat("en-US", {
+              timeZone,
+              hour: "numeric",
+              minute: "2-digit",
+            }).format(retryAt)}{" "}
+            rather than retrying on every visit. If your mantra or intention has
+            anything unusual in it, editing it in Settings often clears this.
+          </>
+        ) : (
+          <>Refreshing usually sorts it. If it keeps happening, the details are below.</>
+        )}
       </p>
-      <p className="mt-3 font-mono text-[12px] leading-relaxed text-faint">
-        {message}
-      </p>
+
+      {message && (
+        <p className="mt-3 font-mono text-[12px] leading-relaxed text-faint">
+          {message}
+        </p>
+      )}
+
+      <div className="mt-4">
+        <Link
+          href="/settings"
+          className="text-sm text-gold underline underline-offset-4 hover:text-gold-bright"
+        >
+          Open settings
+        </Link>
+      </div>
     </div>
   );
 }

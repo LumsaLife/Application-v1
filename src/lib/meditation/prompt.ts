@@ -17,6 +17,13 @@
  * The corollary is a rule: never interpolate anything per-user into the system
  * prompt. No names, no dates, no timestamps. One byte of drift and the cache
  * misses for everyone. Per-user content belongs in buildUserMessage().
+ *
+ * One caveat if you ever change models: caching has a minimum prefix length and
+ * it is model-dependent. This prompt is ~2,100 tokens, comfortably over Claude
+ * Opus 5's 512-token minimum, but some models require 4,096 — under which the
+ * request silently doesn't cache, with no error and no warning, just
+ * cache_read_input_tokens stuck at 0. Check `npm run preview -- --prompt-only`
+ * for the current size and verify the usage numbers after any model change.
  */
 
 import type { CalendarSignal, MeditationLength, TonePreference } from "@/lib/types";

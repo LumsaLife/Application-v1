@@ -139,10 +139,27 @@ npm run dev
 ### Checks
 
 ```bash
-npm run verify      # local-date arithmetic + calendar signal derivation
+npm run verify      # pure logic: timezones, signal, chunking, backoff, batching
 npm run typecheck
 npm run lint
 ```
+
+### Iterating on the prompt
+
+```bash
+npm run preview                                    # one meditation, default inputs
+npm run preview -- --tone buddhist --length 15     # try a register
+npm run preview -- --density open                  # open | light | moderate | packed | none
+npm run preview -- --names                         # SPECIFIC why-today mode
+npm run preview -- --prompt-only                   # inspect the prompt, spend nothing
+```
+
+This is the fast loop for `src/lib/meditation/prompt.ts` — no signup, no
+calendar, no cron. It prints the rendered input, the "why this today" line, the
+script, and then the numbers that tell you whether the length target actually
+landed: word count, break tags, estimated duration against target, token usage
+(including cache hits), and the ElevenLabs character cost the script would
+incur. Every run without `--prompt-only` is a real API call.
 
 `npm run verify` covers the places a subtle bug would be invisible in the UI:
 timezone maths across DST boundaries, streak counting, the guarantee that
@@ -271,8 +288,16 @@ logged per synthesis (`[tts] synthesized …`) so you can total real spend from
 the logs rather than guessing.
 
 Verify caching is working by checking `cache_read_input_tokens` in the response
-usage — `generate.ts` returns it. If it is zero across a batch, something has
-started varying the system prompt.
+usage — `generate.ts` returns it, and `npm run preview` prints it. If it is zero
+across a batch, either something started varying the system prompt, or you
+changed to a model with a higher minimum cacheable prefix (it is 512 tokens on
+Claude Opus 5, but 4,096 on some others, and falling under it fails silently).
+
+Generation failures back off per profile — 30m, 1h, 2h, 4h, capped at 6h —
+because `/today` is `force-dynamic` and would otherwise fire a Claude call on
+every page refresh for a profile that reliably fails. Saving settings or hitting
+"Regenerate today" clears the backoff, since editing your inputs is the signal
+you have fixed whatever it choked on.
 
 ---
 
