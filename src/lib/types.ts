@@ -19,7 +19,12 @@ export type TonePreference =
 
 export type CalendarProvider = "google" | "microsoft";
 export type ThemePreference = "system" | "light" | "dark";
-export type AudioStatus = "pending" | "ready" | "failed" | "skipped";
+export type AudioStatus =
+  | "pending"
+  | "synthesizing"
+  | "ready"
+  | "failed"
+  | "skipped";
 export type MeditationLength = 5 | 10 | 15;
 export type Mood = "heavy" | "tender" | "steady" | "light" | "radiant";
 
@@ -58,6 +63,9 @@ export interface DailyMeditation {
   audio_url: string | null;
   audio_status: AudioStatus;
   audio_duration_seconds: number | null;
+  audio_attempts: number;
+  audio_claimed_at: string | null;
+  audio_error: string | null;
   calendar_signal: CalendarSignal;
   tone_used: TonePreference;
   length_used: MeditationLength;

@@ -21,18 +21,36 @@ model would serve a read-only device without changes.
        │    counts, density, free blocks — never a calendar mirror
        │
        ▼
-   Claude (claude-opus-5)  ──▶  script + "why this today" line
+  PHASE 1  Claude (claude-opus-5)  ──▶  script + "why this today"
+           20-40s · hourly cron at each user's local 5am
        │
-       ▼
-   ElevenLabs  ──▶  MP3 in private Supabase Storage
+       ▼   row lands audio_status='pending'
+       │
+  PHASE 2  ElevenLabs  ──▶  MP3 in private Supabase Storage
+           40-80s · queue worker every 10 min
        │
        ▼
    /today  ──▶  play ──▶  reflect ──▶  streak
 ```
 
-Generation runs **overnight**: an hourly cron picks up each user as their local
-clock passes 5am, so the practice is written and narrated before they wake. The
-`/today` route falls back to generating on demand if the cron missed someone.
+**Generation runs overnight, in two phases.** An hourly cron writes scripts for
+users whose local clock has just passed 5am — one schedule, twenty-four
+cohorts. Audio is a separate queue.
+
+The split is not incidental. A Claude call takes 20-40s; an ElevenLabs pass over
+a 15-minute script is four chunked requests and takes 40-80s. Doing both inside
+one 300-second Vercel function meant it served three or four users before dying,
+and everyone else fell through to lazy generation — defeating the entire point
+of pre-generating. Now `daily_meditations` *is* the queue: rows land `pending`,
+a worker claims them into `synthesizing`, and they end `ready`/`failed`/
+`skipped`. No new infrastructure; the table we already had is the work list.
+
+Both crons budget by wall clock rather than a fixed item count, since per-user
+cost varies by several-fold. Whatever doesn't fit stays queued for the next run.
+
+Two paths drain the audio queue and they cannot collide: the 10-minute cron, and
+the user's own request when they open `/today` to a pending row. Both go through
+the same atomic claim, so ElevenLabs is never paid twice for one script.
 
 ---
 
@@ -53,6 +71,7 @@ migrations in the SQL editor, in order:
 ```
 supabase/migrations/0001_initial_schema.sql
 supabase/migrations/0002_storage.sql
+supabase/migrations/0003_audio_queue.sql
 ```
 
 Or with the CLI: `supabase db push`.
@@ -125,9 +144,11 @@ npm run typecheck
 npm run lint
 ```
 
-`npm run verify` covers the two places a subtle bug would be invisible in the
-UI: timezone maths (including DST boundaries), streak counting, and the
-guarantee that `forStorage()` strips event titles.
+`npm run verify` covers the places a subtle bug would be invisible in the UI:
+timezone maths across DST boundaries, streak counting, the guarantee that
+`forStorage()` strips event titles, break-tag splitting (a 7s pause has to
+become 3+3+1 without losing silence), script chunking, CBR duration maths, and
+the batch runner's deadline behaviour.
 
 ---
 
@@ -135,12 +156,19 @@ guarantee that `forStorage()` strips event titles.
 
 Vercel, with two caveats.
 
-**Cron requires Pro.** The Hobby plan allows one cron execution per day, which
-cannot serve users in more than one timezone. On Hobby you have two options:
-point an external scheduler (GitHub Actions, cron-job.org) at
-`/api/cron/generate` hourly with an `Authorization: Bearer $CRON_SECRET` header,
-or drop the cron entirely and let `/today` generate on first visit — that path
-already exists and works, it just costs the user a 10–20 second wait.
+**Cron requires Pro.** Hobby allows one cron execution per day, which cannot
+serve users in more than one timezone. Three schedules are registered in
+`vercel.json`:
+
+| Route | Schedule | Does |
+|---|---|---|
+| `/api/cron/generate` | hourly | scripts for users hitting 5am local |
+| `/api/cron/audio` | every 10 min | drains the synthesis queue |
+| `/api/cron/remind` | hourly | emails users hitting 7am local |
+
+All three authenticate with `Authorization: Bearer $CRON_SECRET`, which Vercel
+sends automatically once that variable is set on the project. If you ever need
+to run them elsewhere, any scheduler that can set a header will do.
 
 **Set `NEXT_PUBLIC_APP_URL` to your real domain.** OAuth redirect URIs must
 match exactly, and the `VERCEL_URL` fallback produces a deployment-specific
@@ -161,14 +189,18 @@ src/
     settings/                 preferences, connections, theme, reminders
     api/
       calendar/{google,microsoft}/   OAuth connect + callback
-      cron/generate                  hourly; generates for users hitting 5am local
+      cron/generate                  hourly; scripts for users hitting 5am local
+      cron/audio                     every 10 min; drains the synthesis queue
       cron/remind                    hourly; emails users hitting 7am local
+      meditation/audio               foreground synthesis + status polling
   lib/
+    batch.ts                  time-budgeted concurrent runner for the crons
     meditation/
       prompt.ts               ← the prompt template. Start here to change tone.
       generate.ts             the Claude call. Plumbing only.
-      tts.ts                  ElevenLabs / OpenAI, chunking, storage
-      service.ts              orchestration, idempotent per (user, local date)
+      tts.ts                  ElevenLabs / OpenAI, retries, storage
+      script-chunking.ts      pure text transforms (breaks, chunks, duration)
+      service.ts              two-phase orchestration + the audio queue
     calendar/
       signal.ts               ← calendar → shape. The privacy boundary.
       google.ts, microsoft.ts  provider specifics
@@ -228,8 +260,15 @@ Per user per day, roughly:
 - **Claude** — ~2.5k input tokens (mostly cached after the first request of a
   batch) + ~2k output. Fractions of a cent.
 - **ElevenLabs** — a 15-minute script is ~9,000 characters, so ~9,000 credits.
-  This is the dominant cost and it scales linearly with users and with session
-  length. Worth modelling before you open signups.
+  This is the dominant cost and scales linearly with users *and* session length:
+  a user on 15 minutes costs roughly three times one on 5. Worth modelling
+  before you open signups.
+
+Synthesis retries are bounded at `MAX_AUDIO_ATTEMPTS` (3) per meditation, after
+which the row is marked `failed` and left alone — otherwise one permanently
+broken script is retried by every ten-minute run forever. Character counts are
+logged per synthesis (`[tts] synthesized …`) so you can total real spend from
+the logs rather than guessing.
 
 Verify caching is working by checking `cache_read_input_tokens` in the response
 usage — `generate.ts` returns it. If it is zero across a batch, something has

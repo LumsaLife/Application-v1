@@ -18,6 +18,7 @@ import {
   buildUserMessage,
   type MeditationPromptInput,
 } from "./prompt";
+import { stripBreaks, totalBreakSeconds } from "./script-chunking";
 
 const MODEL = "claude-opus-5";
 
@@ -138,8 +139,7 @@ export async function generateMeditation(
  * layer needs them. Anywhere the script is shown to a human, run it through here.
  */
 export function scriptForDisplay(script: string): string {
-  return script
-    .replace(/<break\s+time="[^"]*"\s*\/?>/gi, "")
+  return stripBreaks(script)
     // Collapse the blank lines the removed tags leave behind.
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -150,11 +150,5 @@ export function scriptForDisplay(script: string): string {
 export function estimateDurationSeconds(script: string): number {
   const words = scriptForDisplay(script).split(/\s+/).filter(Boolean).length;
   const speechSeconds = (words / 105) * 60; // ~105 wpm for guided meditation
-
-  let pauseSeconds = 0;
-  for (const match of script.matchAll(/<break\s+time="([\d.]+)s"/gi)) {
-    pauseSeconds += Number(match[1]) || 0;
-  }
-
-  return Math.round(speechSeconds + pauseSeconds);
+  return Math.round(speechSeconds + totalBreakSeconds(script));
 }

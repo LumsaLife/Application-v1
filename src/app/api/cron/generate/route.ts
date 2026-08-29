@@ -1,30 +1,44 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ensureTodaysMeditation } from "@/lib/meditation/service";
+import { ensureTodaysScript } from "@/lib/meditation/service";
 import { isAuthorizedCron } from "@/lib/cron-auth";
+import { runBatch } from "@/lib/batch";
 import { localHour } from "@/lib/time";
 import type { Profile } from "@/lib/types";
 
 /**
- * Overnight generation.
+ * Overnight script generation.
  *
- * Runs hourly. Each run picks up the users whose *local* clock has just passed
- * GENERATION_HOUR, so everyone wakes to a practice already written and narrated
- * regardless of timezone — one cron, twenty-four cohorts.
+ * Runs hourly and picks up the users whose *local* clock has just passed
+ * GENERATION_HOUR — one schedule, twenty-four cohorts. Writes the script and
+ * leaves audio 'pending' for /api/cron/audio to synthesize.
  *
- * Requires a Vercel Pro plan: Hobby allows one cron execution per day, which
- * cannot serve users in more than one timezone. On Hobby, either run this from
- * an external scheduler hitting the same URL, or switch to generating lazily on
- * first visit (the /today route already falls back to that).
+ * Requires Vercel Pro: Hobby allows one cron execution per day, which cannot
+ * serve users in more than one timezone.
  */
 
-// Users whose local hour just became this are generated for.
+/** Users whose local hour just became this are generated for. */
 const GENERATION_HOUR = 5;
 
-/** Ceiling per invocation, so one run can't blow the function timeout. */
-const MAX_USERS_PER_RUN = 60;
-
+/**
+ * Vercel's function ceiling for this route. Note the budget below stops us
+ * *starting* work well before this, so an item already in flight can finish.
+ */
 export const maxDuration = 300;
+
+/**
+ * Stop claiming new users at 3m30s, leaving 90s of headroom for the slowest
+ * in-flight Claude call. Whatever is left stays queued for the next hourly run
+ * — and any user the cron never reaches still gets a script on first visit.
+ */
+const BUDGET_MS = 210_000;
+
+/**
+ * Claude calls are IO-bound and independent, so a handful in parallel fills the
+ * budget far better than working through them one at a time. Kept modest to
+ * stay clear of per-account rate limits.
+ */
+const CONCURRENCY = 4;
 
 export async function GET(request: NextRequest) {
   if (!isAuthorizedCron(request)) {
@@ -44,37 +58,22 @@ export async function GET(request: NextRequest) {
   }
 
   // Filtering in application code rather than SQL: Postgres can do timezone
-  // arithmetic, but the same Intl-based logic runs everywhere else in the app
-  // and having one implementation of "what time is it for this user" is worth
-  // more than pushing the filter into the query.
+  // arithmetic, but the same Intl-based logic runs everywhere else in the app,
+  // and one implementation of "what time is it for this user" is worth more
+  // than pushing the filter into the query.
   const due = (profiles as Profile[]).filter(
     (profile) => localHour(now, profile.timezone) === GENERATION_HOUR,
   );
 
-  const batch = due.slice(0, MAX_USERS_PER_RUN);
-  const results = { attempted: batch.length, created: 0, existing: 0, failed: 0 };
+  const result = await runBatch({
+    items: due,
+    concurrency: CONCURRENCY,
+    budgetMs: BUDGET_MS,
+    label: "cron/generate",
+    handler: async (profile) => {
+      await ensureTodaysScript(profile);
+    },
+  });
 
-  for (const profile of batch) {
-    try {
-      const { created } = await ensureTodaysMeditation(profile);
-      if (created) results.created += 1;
-      else results.existing += 1;
-    } catch (generationError) {
-      results.failed += 1;
-      // One user's bad mantra or revoked calendar must not stop the batch.
-      console.error(
-        `[cron/generate] failed for user ${profile.user_id}:`,
-        generationError,
-      );
-    }
-  }
-
-  if (due.length > MAX_USERS_PER_RUN) {
-    console.warn(
-      `[cron/generate] ${due.length - MAX_USERS_PER_RUN} users deferred past ` +
-        `the per-run cap; they will be generated lazily on first visit.`,
-    );
-  }
-
-  return NextResponse.json({ ok: true, hour: GENERATION_HOUR, ...results });
+  return NextResponse.json({ ok: true, hour: GENERATION_HOUR, due: due.length, ...result });
 }

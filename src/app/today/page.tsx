@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AppNav } from "@/components/AppNav";
-import { ensureTodaysMeditation } from "@/lib/meditation/service";
+import { ensureTodaysScript } from "@/lib/meditation/service";
 import { scriptForDisplay, estimateDurationSeconds } from "@/lib/meditation/generate";
 import { getPlaybackUrl } from "@/lib/meditation/tts";
 import { describeSignal } from "@/lib/calendar/signal";
@@ -30,16 +30,19 @@ export default async function TodayPage() {
   const profile = profileRow as Profile;
 
   /*
-   * Generation normally happens overnight in the cron. This call is the safety
-   * net: a user who signed up this morning, or whose cron run failed, still
-   * gets a practice — it just costs them the wait. When the cron did its job,
-   * this is a single indexed lookup.
+   * Script generation normally happens overnight in the cron. This call is the
+   * safety net: a user who signed up this morning, or whose cron run failed,
+   * still gets a practice — it just costs them the wait. When the cron did its
+   * job, this is a single indexed lookup.
+   *
+   * Audio is deliberately NOT synthesized here. It would add 40-80s to a page
+   * render. TodayView drives it separately and shows real progress.
    */
   let meditation: DailyMeditation | null = null;
   let generationError: string | null = null;
 
   try {
-    const result = await ensureTodaysMeditation(profile);
+    const result = await ensureTodaysScript(profile);
     meditation = result.meditation;
   } catch (error) {
     console.error("[today] generation failed:", error);
@@ -112,7 +115,8 @@ export default async function TodayPage() {
 
               <TodayView
                 meditationId={meditation.id}
-                audioUrl={audioUrl}
+                initialAudioUrl={audioUrl}
+                initialAudioStatus={meditation.audio_status}
                 displayScript={scriptForDisplay(meditation.script_text)}
                 estimatedSeconds={
                   meditation.audio_duration_seconds ??
@@ -121,13 +125,6 @@ export default async function TodayPage() {
                 alreadyCompleted={Boolean(meditation.completed_at)}
                 alreadyJournaled={(journalCount ?? 0) > 0}
               />
-
-              {meditation.audio_status === "failed" && (
-                <p className="text-[13px] text-muted">
-                  Narration didn&rsquo;t generate for today&rsquo;s practice —
-                  you can still read it, or have your browser read it aloud.
-                </p>
-              )}
             </>
           ) : null}
         </div>

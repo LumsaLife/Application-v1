@@ -16,6 +16,14 @@ import {
   localMinutesSinceMidnight,
 } from "@/lib/time";
 import { buildCalendarSignal, describeSignal, forStorage } from "@/lib/calendar/signal";
+import {
+  chunkScript,
+  durationFromBytes,
+  normalizeBreaks,
+  stripBreaks,
+  totalBreakSeconds,
+} from "@/lib/meditation/script-chunking";
+import { runBatch } from "@/lib/batch";
 import type { NormalizedEvent } from "@/lib/calendar/signal";
 
 let failures = 0;
@@ -123,5 +131,127 @@ console.log("   packed:", describeSignal(packed));
 console.log("   light: ", describeSignal(light));
 console.log("   empty: ", describeSignal(empty));
 
-console.log(failures === 0 ? "\nALL CHECKS PASSED\n" : `\n${failures} CHECK(S) FAILED\n`);
-process.exit(failures === 0 ? 0 : 1);
+// Wrapped rather than top-level await: tsx emits CJS here, which doesn't
+// support it.
+void (async () => {
+  await scriptChecks();
+  await batchChecks();
+
+  console.log(
+    failures === 0 ? "\nALL CHECKS PASSED\n" : `\n${failures} CHECK(S) FAILED\n`,
+  );
+  process.exit(failures === 0 ? 0 : 1);
+})();
+
+async function scriptChecks() {
+  console.log("\n--- script chunking ---");
+
+  // ElevenLabs caps a single break at ~3s, so longer pauses must be split into
+  // a run of shorter tags that play as one continuous silence.
+  check("short break untouched", normalizeBreaks('<break time="2s" />'), '<break time="2s" />');
+  check("3s break untouched", normalizeBreaks('<break time="3s" />'), '<break time="3s" />');
+  check(
+    "7s break splits into 3+3+1",
+    normalizeBreaks('<break time="7s" />'),
+    '<break time="3s" /> <break time="3s" /> <break time="1s" />',
+  );
+  check(
+    "6s break splits into 3+3 with no zero-length tail",
+    normalizeBreaks('<break time="6s" />'),
+    '<break time="3s" /> <break time="3s" />',
+  );
+  check(
+    "split preserves total silence",
+    totalBreakSeconds(normalizeBreaks('<break time="8s" />')),
+    8,
+  );
+  check("decimal break survives", normalizeBreaks('<break time="1.5s" />'), '<break time="1.5s" />');
+
+  check("stripBreaks removes tags", stripBreaks('Breathe. <break time="3s" /> Again.'), "Breathe. Again.");
+  check("totalBreakSeconds sums", totalBreakSeconds('<break time="3s" /> x <break time="2.5s" />'), 5.5);
+
+  console.log("\n--- chunking ---");
+  const para = (n: number, len: number) => Array(n).fill("x".repeat(len)).join("\n\n");
+
+  check("short script is one chunk", chunkScript(para(2, 100), 2400).length, 1);
+  const many = chunkScript(para(10, 500), 2400);
+  check("long script splits", many.length > 1, true);
+  check("every chunk under limit", many.every((c) => c.length <= 2400), true);
+  check(
+    "no content lost",
+    many.join("\n\n").replace(/\s/g, "").length,
+    para(10, 500).replace(/\s/g, "").length,
+  );
+  // A single over-long paragraph has to go somewhere; sending it whole is a
+  // better failure than slicing a sentence in half.
+  check("oversized single paragraph kept whole", chunkScript("y".repeat(5000), 2400).length, 1);
+  check("empty script yields one chunk", chunkScript("", 2400).length, 1);
+
+  console.log("\n--- duration from CBR bytes ---");
+  // 128 kbps = 16,000 bytes/sec.
+  check("16000 bytes = 1s", durationFromBytes(16_000), 1);
+  check("960000 bytes = 60s", durationFromBytes(960_000), 60);
+  check("15 min ≈ 14.4MB", durationFromBytes(14_400_000), 900);
+}
+
+async function batchChecks() {
+  console.log("\n--- batch runner ---");
+
+  const fast = await runBatch({
+    items: [1, 2, 3, 4, 5],
+    concurrency: 2,
+    budgetMs: 5000,
+    label: "test",
+    handler: async () => {},
+  });
+  check("processes everything within budget", [fast.succeeded, fast.failed, fast.deferred], [5, 0, 0]);
+
+  // One bad item must never cost everyone else their practice.
+  const withFailure = await runBatch({
+    items: [1, 2, 3, 4],
+    concurrency: 2,
+    budgetMs: 5000,
+    label: "test",
+    handler: async (n) => {
+      if (n === 2) throw new Error("boom");
+    },
+  });
+  check("one failure doesn't stop the batch", [withFailure.succeeded, withFailure.failed], [3, 1]);
+
+  // The whole point of budgeting by clock: stop claiming work we can't finish,
+  // and report what's left rather than overrunning the function timeout.
+  const budgeted = await runBatch({
+    items: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    concurrency: 1,
+    budgetMs: 250,
+    label: "test",
+    handler: async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    },
+  });
+  check("stops at the deadline", budgeted.deferred > 0, true);
+  check("accounts for every item", budgeted.attempted + budgeted.deferred, 10);
+  check("never exceeds budget by more than one item", budgeted.elapsedMs < 600, true);
+
+  // Concurrency must actually overlap the waiting, or the budget buys nothing.
+  const started = Date.now();
+  await runBatch({
+    items: [1, 2, 3, 4],
+    concurrency: 4,
+    budgetMs: 5000,
+    label: "test",
+    handler: async () => {
+      await new Promise((r) => setTimeout(r, 150));
+    },
+  });
+  check("concurrency overlaps work", Date.now() - started < 400, true);
+
+  const empty = await runBatch({
+    items: [] as number[],
+    concurrency: 4,
+    budgetMs: 5000,
+    label: "test",
+    handler: async () => {},
+  });
+  check("empty queue is a no-op", [empty.attempted, empty.deferred], [0, 0]);
+}
