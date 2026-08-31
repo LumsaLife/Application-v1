@@ -16,6 +16,7 @@ export interface SettingsPayload {
   tone: TonePreference;
   length: MeditationLength;
   referenceEventsByName: boolean;
+  familyMode: boolean;
   theme: ThemePreference;
   reminderEmailEnabled: boolean;
   timezone: string;
@@ -39,6 +40,7 @@ export async function updateSettings(payload: SettingsPayload) {
       tone_preference: payload.tone,
       meditation_length_pref: payload.length,
       reference_events_by_name: payload.referenceEventsByName,
+      family_mode: payload.familyMode,
       theme_preference: payload.theme,
       reminder_email_enabled: payload.reminderEmailEnabled,
       timezone,

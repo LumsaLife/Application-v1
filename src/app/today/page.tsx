@@ -12,7 +12,9 @@ import { getPlaybackUrl } from "@/lib/meditation/tts";
 import { describeSignal } from "@/lib/calendar/signal";
 import { computeStreak, localDateString } from "@/lib/time";
 import type { DailyMeditation, Profile } from "@/lib/types";
+import { ensureTodaysLight } from "@/lib/challenges/service";
 import { TodayView } from "./TodayView";
+import { DailyLight } from "./DailyLight";
 
 // Always current — a cached Today screen would show yesterday's practice.
 export const dynamic = "force-dynamic";
@@ -90,6 +92,17 @@ export default async function TodayPage() {
       ? await getPlaybackUrl(meditation.audio_url)
       : null;
 
+  /*
+   * Daily Light is independent of the meditation — if generation failed, the
+   * outward half of the practice should still be there. It reuses the calendar
+   * signal already stored on today's meditation rather than re-deriving it, and
+   * falls back to null when there is no meditation to read it from.
+   */
+  const dailyLight = await ensureTodaysLight(
+    profile,
+    meditation?.calendar_signal ?? null,
+  );
+
   const greeting = getGreeting(profile.timezone);
 
   return (
@@ -143,6 +156,20 @@ export default async function TodayPage() {
               />
             </>
           ) : null}
+
+          {dailyLight && (
+            <>
+              <hr className="border-border" />
+              <DailyLight
+                initial={{
+                  title: dailyLight.challenge.title,
+                  invitation: dailyLight.challenge.invitation,
+                  status: dailyLight.userChallenge.status,
+                  canSwap: dailyLight.canSwap,
+                }}
+              />
+            </>
+          )}
         </div>
       </main>
     </div>

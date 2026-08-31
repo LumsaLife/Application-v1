@@ -48,6 +48,7 @@ export function SettingsForm({
   const [referenceEvents, setReferenceEvents] = useState(
     profile.reference_events_by_name,
   );
+  const [familyMode, setFamilyMode] = useState(profile.family_mode);
   const [theme, setTheme] = useState<ThemePreference>(profile.theme_preference);
   const [reminderEmail, setReminderEmail] = useState(
     profile.reminder_email_enabled,
@@ -86,6 +87,7 @@ export function SettingsForm({
       tone,
       length,
       referenceEventsByName: referenceEvents,
+      familyMode,
       theme,
       reminderEmailEnabled: reminderEmail,
       // Re-read on save so a user who has travelled gets the right timezone
@@ -201,6 +203,16 @@ export function SettingsForm({
           onChange={setReferenceEvents}
           label="Let Lumsa name my events"
           description="Off, your daily line describes the shape of the day — “three things close together this afternoon.” On, it may name one event directly. Titles are still never stored either way."
+        />
+      </Card>
+
+      <Card className="space-y-4">
+        <SectionTitle>Today&rsquo;s Light</SectionTitle>
+        <Toggle
+          checked={familyMode}
+          onChange={setFamilyMode}
+          label="Family mode"
+          description="Draws the daily invitation from acts you can do with children — and leaves out the ones written for adults on their own."
         />
       </Card>
 

@@ -40,6 +40,9 @@ export interface Profile {
   theme_preference: ThemePreference;
   reminder_email_enabled: boolean;
   onboarded_at: string | null;
+  is_admin: boolean;
+  /** Draws Daily Light from the family-facing set. */
+  family_mode: boolean;
   generation_failures: number;
   generation_failed_at: string | null;
   generation_error: string | null;

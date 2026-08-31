@@ -72,6 +72,15 @@ migrations in the SQL editor, in order:
 supabase/migrations/0001_initial_schema.sql
 supabase/migrations/0002_storage.sql
 supabase/migrations/0003_audio_queue.sql
+supabase/migrations/0004_generation_backoff.sql
+supabase/migrations/0005_daily_light.sql
+```
+
+Then seed the Daily Light library:
+
+```bash
+npm run seed:challenges              # upserts on slug; safe to re-run
+npm run seed:challenges -- --dry-run # validate the file, write nothing
 ```
 
 Or with the CLI: `supabase db push`.
@@ -144,6 +153,47 @@ npm run typecheck
 npm run lint
 ```
 
+### Daily Light
+
+A small daily act of kindness that sits below the meditation on Today — the
+outward half of the practice. One per user per day, chosen from a library of 43
+seeded challenges.
+
+Selection (`src/lib/challenges/select.ts`) is pure: no database, no clock, no
+environment. It takes the pool, the user's history, and today's calendar signal,
+and returns one challenge. Two properties matter and both are covered by
+`npm run verify`:
+
+- **Deterministic.** Seeded on `user_id + local_date`, so a refresh never
+  re-rolls the day's invitation. It is also seeded on the skip count, so
+  "Not today" genuinely produces something different.
+- **A 30-day exclusion window**, counting skipped challenges as offered —
+  passing on something is still having seen it.
+
+Hard rules (audience, and the two-money-asks-per-week cap) are filters and are
+allowed to empty the pool: a family-mode user must never be shown an adult
+challenge because the pool ran thin. Preferences (effort and context, driven by
+the calendar signal) are *tiers*, tried strictest-first, so they can never
+leave someone with nothing.
+
+One consequence worth knowing: family mode has 23 eligible challenges against a
+30-day window, so it reaches the least-recently-offered fallback by design. If
+family mode gets real use, the library needs more `audience: family | both`
+entries.
+
+**Adding challenges.** Until the Phase 2 admin UI exists, either edit
+`supabase/seed/challenges.seed.json` and re-run the seed, or add a row directly
+in the Supabase table editor — every column beyond `slug`, `title`,
+`invitation`, `category`, `effort`, `context`, `audience` has a default. The
+seed file omits `weight` and `active`, which means values you tune in the table
+editor survive a re-seed; add them to a seed entry explicitly and the file wins
+from then on.
+
+**Tone guardrails**, which live in the copy and should survive edits: nothing
+implies failure for a skipped day, there is no streak or score anywhere near
+this feature, and the acknowledgement after Done is one quiet line. An
+invitation that congratulates you for accepting it stops being an invitation.
+
 ### Iterating on the prompt
 
 ```bash
@@ -164,8 +214,10 @@ incur. Every run without `--prompt-only` is a real API call.
 `npm run verify` covers the places a subtle bug would be invisible in the UI:
 timezone maths across DST boundaries, streak counting, the guarantee that
 `forStorage()` strips event titles, break-tag splitting (a 7s pause has to
-become 3+3+1 without losing silence), script chunking, CBR duration maths, and
-the batch runner's deadline behaviour.
+become 3+3+1 without losing silence), script chunking, CBR duration maths, the
+batch runner's deadline behaviour, generation backoff, and Daily Light
+selection — determinism, the exclusion boundary at exactly 30 days, audience
+isolation, and a simulated year of daily selection against the real library.
 
 ---
 
@@ -212,6 +264,11 @@ src/
       meditation/audio               foreground synthesis + status polling
   lib/
     batch.ts                  time-budgeted concurrent runner for the crons
+    challenges/
+      select.ts               ← Daily Light selection. Pure and testable.
+      random.ts               seeded RNG + weighted pick
+      service.ts              persistence, swap handling
+      types.ts
     meditation/
       prompt.ts               ← the prompt template. Start here to change tone.
       generate.ts             the Claude call. Plumbing only.
@@ -225,6 +282,7 @@ src/
     time.ts                   local-date arithmetic and streaks
     crypto.ts                 AES-256-GCM for refresh tokens
 supabase/migrations/          schema + RLS + storage bucket
+supabase/seed/                Daily Light challenge library (checked in)
 ```
 
 ### Two files worth reading before you change anything
@@ -303,6 +361,10 @@ you have fixed whatever it choked on.
 
 ## Not built yet
 
+- **Daily Light Phase 2**: the `/admin/challenges` route gated on
+  `profiles.is_admin` (the column and its RLS policies exist, the UI does not),
+  the optional one-line reflection after Done (`reflection_text` is on the
+  table, unused), a cumulative "lights lit" count, and the weekly email variant.
 - Ambient background audio bed under the narration (nice-to-have, not MVP)
 - Web push (email only for now)
 - Feeding journal entries into generation quality beyond the last three
