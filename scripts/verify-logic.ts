@@ -25,16 +25,11 @@ import {
 } from "@/lib/meditation/script-chunking";
 import { runBatch } from "@/lib/batch";
 import { generationCooldownMs } from "@/lib/backoff";
+import { check, failureCount, section } from "./checks/assert";
+import { challengeChecks } from "./checks/challenges";
 import type { NormalizedEvent } from "@/lib/calendar/signal";
 
-let failures = 0;
-function check(label: string, actual: unknown, expected: unknown) {
-  const ok = JSON.stringify(actual) === JSON.stringify(expected);
-  if (!ok) failures++;
-  console.log(`${ok ? "  ok  " : " FAIL "} ${label}${ok ? "" : `\n         got ${JSON.stringify(actual)}\n         want ${JSON.stringify(expected)}`}`);
-}
-
-console.log("\n--- timezone ---");
+section("timezone");
 // 2026-08-29T03:30:00Z = Aug 28, 8:30pm in LA; Aug 29 3:30pm in Auckland
 const t = new Date("2026-08-29T03:30:00Z");
 check("LA local date", localDateString(t, "America/Los_Angeles"), "2026-08-28");
@@ -57,7 +52,7 @@ check(
 );
 check("day starts at local midnight", localDateString(normalBounds.start, "America/New_York"), "2026-08-29");
 
-console.log("\n--- streaks ---");
+section("streaks");
 check("empty", computeStreak([], "2026-08-29"), 0);
 check("today only", computeStreak(["2026-08-29"], "2026-08-29"), 1);
 check("three consecutive ending today", computeStreak(["2026-08-29","2026-08-28","2026-08-27"], "2026-08-29"), 3);
@@ -66,7 +61,7 @@ check("broken two days ago", computeStreak(["2026-08-26","2026-08-25"], "2026-08
 check("gap stops the count", computeStreak(["2026-08-29","2026-08-27","2026-08-26"], "2026-08-29"), 1);
 check("crosses a month boundary", computeStreak(["2026-09-01","2026-08-31","2026-08-30"], "2026-09-01"), 3);
 
-console.log("\n--- calendar signal ---");
+section("calendar signal");
 const tz = "America/New_York";
 function ev(startLocalHour: number, minutes: number, title = "Meeting"): NormalizedEvent {
   // Build a UTC instant corresponding to the given NY local hour on 2026-08-29 (EDT, UTC-4)
@@ -119,7 +114,7 @@ const filtered = buildCalendarSignal(
 );
 check("declined + all-day excluded", filtered.meetingCount, 1);
 
-console.log("\n--- privacy boundary ---");
+section("privacy boundary");
 const withTitles = buildCalendarSignal([ev(9, 60, "Performance review")], tz, true);
 check("titles present when opted in", withTitles.eventTitles, ["Performance review"]);
 const withoutTitles = buildCalendarSignal([ev(9, 60, "Performance review")], tz, false);
@@ -127,7 +122,7 @@ check("titles absent when not opted in", withoutTitles.eventTitles, undefined);
 check("forStorage strips titles", forStorage(withTitles).eventTitles, undefined);
 check("forStorage keeps the rest", forStorage(withTitles).meetingCount, 1);
 
-console.log("\n--- describeSignal ---");
+section("describeSignal");
 console.log("   packed:", describeSignal(packed));
 console.log("   light: ", describeSignal(light));
 console.log("   empty: ", describeSignal(empty));
@@ -138,7 +133,9 @@ void (async () => {
   await scriptChecks();
   await batchChecks();
   cooldownChecks();
+  challengeChecks();
 
+  const failures = failureCount();
   console.log(
     failures === 0 ? "\nALL CHECKS PASSED\n" : `\n${failures} CHECK(S) FAILED\n`,
   );
@@ -146,7 +143,7 @@ void (async () => {
 })();
 
 async function scriptChecks() {
-  console.log("\n--- script chunking ---");
+  section("script chunking");
 
   // ElevenLabs caps a single break at ~3s, so longer pauses must be split into
   // a run of shorter tags that play as one continuous silence.
@@ -172,7 +169,7 @@ async function scriptChecks() {
   check("stripBreaks removes tags", stripBreaks('Breathe. <break time="3s" /> Again.'), "Breathe. Again.");
   check("totalBreakSeconds sums", totalBreakSeconds('<break time="3s" /> x <break time="2.5s" />'), 5.5);
 
-  console.log("\n--- chunking ---");
+  section("chunking");
   const para = (n: number, len: number) => Array(n).fill("x".repeat(len)).join("\n\n");
 
   check("short script is one chunk", chunkScript(para(2, 100), 2400).length, 1);
@@ -189,7 +186,7 @@ async function scriptChecks() {
   check("oversized single paragraph kept whole", chunkScript("y".repeat(5000), 2400).length, 1);
   check("empty script yields one chunk", chunkScript("", 2400).length, 1);
 
-  console.log("\n--- duration from CBR bytes ---");
+  section("duration from CBR bytes");
   // 128 kbps = 16,000 bytes/sec.
   check("16000 bytes = 1s", durationFromBytes(16_000), 1);
   check("960000 bytes = 60s", durationFromBytes(960_000), 60);
@@ -197,7 +194,7 @@ async function scriptChecks() {
 }
 
 async function batchChecks() {
-  console.log("\n--- batch runner ---");
+  section("batch runner");
 
   const fast = await runBatch({
     items: [1, 2, 3, 4, 5],
@@ -259,7 +256,7 @@ async function batchChecks() {
 }
 
 function cooldownChecks() {
-  console.log("\n--- generation backoff ---");
+  section("generation backoff");
   const MIN = 60_000;
 
   check("no failures → no wait", generationCooldownMs(0), 0);

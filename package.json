@@ -10,7 +10,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "verify": "tsx scripts/verify-logic.ts",
-    "preview": "tsx scripts/preview-meditation.ts"
+    "preview": "tsx scripts/preview-meditation.ts",
+    "seed:challenges": "tsx scripts/seed-challenges.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
