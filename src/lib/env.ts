@@ -150,6 +150,38 @@ export const env = {
     (optional("VERCEL_URL") ? `https://${optional("VERCEL_URL")}` : "http://localhost:3000"),
 } as const;
 
+/**
+ * Required variables that are absent from this build.
+ *
+ * Non-throwing on purpose: it is used to render a "finish setup" screen instead
+ * of letting a page throw. An unhandled server exception on Vercel surfaces as
+ * "Application error ... Digest: 3318172160", which tells the person looking at
+ * it nothing at all.
+ */
+export function missingRequiredConfig(): string[] {
+  const required = [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "ANTHROPIC_API_KEY",
+    "ENCRYPTION_KEY",
+    "CRON_SECRET",
+  ];
+
+  // Read through the same accessors the app uses, so this cannot disagree with
+  // what the rest of the code sees — including the PUBLIC_ENV inlining.
+  const resolved: Record<string, string | undefined> = {
+    NEXT_PUBLIC_SUPABASE_URL: env.supabaseUrlOptional(),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: env.supabaseAnonKeyOptional(),
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
+    CRON_SECRET: process.env.CRON_SECRET,
+  };
+
+  return required.filter((name) => !resolved[name]);
+}
+
 /** True when calendar OAuth is configured for a provider. Drives Settings UI. */
 export const calendarConfigured = {
   google: () => Boolean(env.googleClientId() && env.googleClientSecret()),

@@ -199,6 +199,17 @@ visiting (Preview and Production are separate).
 
 ## Troubleshooting
 
+### `Application error: a server-side exception has occurred` with a Digest
+
+A Server Component threw. The digest is a reference for the hosting logs, not
+something you can decode.
+
+Protected pages no longer do this for missing configuration — they render a
+"finish setup" screen naming the absent variables instead. If you still see a
+digest, it is something else; find it by digest in Vercel's runtime logs
+(Deployment → Logs), or reproduce locally with `npm run dev`, where the real
+stack trace is printed.
+
 ### `500: MIDDLEWARE_INVOCATION_FAILED` on every page
 
 Middleware crashed. Since it runs on every request, a crash there returns 500

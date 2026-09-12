@@ -1,14 +1,20 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { calendarConfigured, missingRequiredConfig } from "@/lib/env";
+import { SetupRequired } from "@/components/SetupRequired";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AppNav } from "@/components/AppNav";
-import { calendarConfigured } from "@/lib/env";
 import type { CalendarConnectionSummary, Profile } from "@/lib/types";
 import { SettingsForm } from "./SettingsForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
+  // Check before touching Supabase: createClient() throws on missing config,
+  // and an unhandled server exception reaches the visitor as an opaque digest.
+  const missingConfig = missingRequiredConfig();
+  if (missingConfig.length > 0) return <SetupRequired missing={missingConfig} />;
+
   const supabase = await createClient();
   const {
     data: { user },

@@ -1,11 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { calendarConfigured, missingRequiredConfig } from "@/lib/env";
+import { SetupRequired } from "@/components/SetupRequired";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { CalendarConnect } from "@/components/CalendarConnect";
 import { Logo } from "@/components/Logo";
-import { calendarConfigured } from "@/lib/env";
 import type { CalendarConnectionSummary } from "@/lib/types";
+
+/**
+ * Never prerender. This page reads the session, and the config guard above
+ * returns early without touching cookies() — which let Next prerender the
+ * "finish setup" screen into the build and serve it forever, whatever the
+ * runtime config said.
+ */
+export const dynamic = "force-dynamic";
 
 /**
  * The last onboarding step, and the only optional one.
@@ -14,6 +23,11 @@ import type { CalendarConnectionSummary } from "@/lib/types";
  * a lot to ask for on day one, and Lumsa still works without it.
  */
 export default async function OnboardingCalendarPage() {
+  // Check before touching Supabase: createClient() throws on missing config,
+  // and an unhandled server exception reaches the visitor as an opaque digest.
+  const missingConfig = missingRequiredConfig();
+  if (missingConfig.length > 0) return <SetupRequired missing={missingConfig} />;
+
   const supabase = await createClient();
   const {
     data: { user },

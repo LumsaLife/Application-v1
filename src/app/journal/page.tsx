@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { missingRequiredConfig } from "@/lib/env";
+import { SetupRequired } from "@/components/SetupRequired";
 import { AppNav } from "@/components/AppNav";
 import type { Mood } from "@/lib/types";
 
@@ -23,6 +25,11 @@ const MOOD_LABELS: Record<Mood, string> = {
 };
 
 export default async function JournalPage() {
+  // Check before touching Supabase: createClient() throws on missing config,
+  // and an unhandled server exception reaches the visitor as an opaque digest.
+  const missingConfig = missingRequiredConfig();
+  if (missingConfig.length > 0) return <SetupRequired missing={missingConfig} />;
+
   const supabase = await createClient();
   const {
     data: { user },

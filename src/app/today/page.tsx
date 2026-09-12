@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { missingRequiredConfig } from "@/lib/env";
+import { SetupRequired } from "@/components/SetupRequired";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AppNav } from "@/components/AppNav";
 import {
@@ -20,6 +22,11 @@ import { DailyLight } from "./DailyLight";
 export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
+  // Check before touching Supabase: createClient() throws on missing config,
+  // and an unhandled server exception reaches the visitor as an opaque digest.
+  const missingConfig = missingRequiredConfig();
+  if (missingConfig.length > 0) return <SetupRequired missing={missingConfig} />;
+
   const supabase = await createClient();
   const {
     data: { user },
