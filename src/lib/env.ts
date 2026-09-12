@@ -73,6 +73,22 @@ export const env = {
   supabaseAnonKey: () => required("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
   supabaseServiceRoleKey: () => required("SUPABASE_SERVICE_ROLE_KEY"),
 
+  /**
+   * Non-throwing reads of the Supabase config.
+   *
+   * Middleware runs on every request, so a throw there takes down the whole
+   * site — public pages included, and the diagnostic route with them. It needs
+   * to be able to ask whether config exists without being blown up by the
+   * answer.
+   */
+  supabaseConfigured: () =>
+    Boolean(
+      optional("NEXT_PUBLIC_SUPABASE_URL") &&
+        optional("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    ),
+  supabaseUrlOptional: () => optional("NEXT_PUBLIC_SUPABASE_URL"),
+  supabaseAnonKeyOptional: () => optional("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+
   // --- Claude -------------------------------------------------------------
   anthropicApiKey: () => required("ANTHROPIC_API_KEY"),
 

@@ -199,6 +199,26 @@ visiting (Preview and Production are separate).
 
 ## Troubleshooting
 
+### `500: MIDDLEWARE_INVOCATION_FAILED` on every page
+
+Middleware crashed. Since it runs on every request, a crash there returns 500
+for the whole site — landing page included.
+
+The cause is almost always a missing `NEXT_PUBLIC_SUPABASE_URL` or
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` in that environment's build. Middleware now
+fails open rather than throwing, so a misconfigured deployment serves a working
+site that asks for sign-in instead of a blanket 500 — but the variables still
+need setting for anything to work.
+
+Check `/api/auth/demo-status`, which reports which required variables the build
+actually resolved (presence only, never values). Then set whatever is missing
+and **redeploy** — the `NEXT_PUBLIC_` ones are compiled into the build, so
+setting them does nothing to an existing deployment.
+
+If a protected page such as `/today` still 500s while `/` and `/login` render,
+that is the same cause: the page needs Supabase and cannot reach it. The
+diagnostic will say which variable is absent.
+
 ### `No Output Directory named "public" found after the Build completed`
 
 Vercel is treating the project as a **static site** instead of a Next.js app.
