@@ -1,0 +1,172 @@
+# Deploying Lumsa
+
+Vercel Pro is required — see the bottom for why it isn't optional.
+
+Work top to bottom. Steps 1–3 have to happen before the first deploy;
+everything after can follow.
+
+---
+
+## 1. Supabase
+
+Create a project, then in the SQL editor run each migration **in order**:
+
+```
+supabase/migrations/0001_initial_schema.sql
+supabase/migrations/0002_storage.sql
+supabase/migrations/0003_audio_queue.sql
+supabase/migrations/0004_generation_backoff.sql
+supabase/migrations/0005_daily_light.sql
+```
+
+All five have been run against a real Postgres 16 and apply cleanly, including
+the RLS policies (see `supabase/tests/`).
+
+Then, from **Project Settings**, collect:
+
+- Data API → Project URL
+- API Keys → `anon` key and `service_role` key
+
+In **Authentication → URL Configuration**, set **Site URL** to your production
+domain and add it to **Redirect URLs**. Sign-in builds its magic-link redirect
+from the browser's origin, so links bounce without this. Add
+`http://localhost:3000` too if you want local sign-in to work.
+
+The built-in email sender is rate-limited and fine for testing only — configure
+SMTP before you invite anyone real.
+
+## 2. Generate two secrets
+
+```bash
+openssl rand -base64 32   # ENCRYPTION_KEY
+openssl rand -hex 32      # CRON_SECRET
+```
+
+**Back up `ENCRYPTION_KEY`.** It decrypts stored calendar refresh tokens.
+Rotating or losing it disconnects every user's calendar permanently.
+
+## 3. Environment variables in Vercel
+
+Set these for **Production, Preview and Development**.
+
+| Variable | Required | Notes |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | yes | Must exist **at build time** — it is compiled into the browser bundle |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Same |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Bypasses RLS. Server only — never prefix with `NEXT_PUBLIC_` |
+| `ANTHROPIC_API_KEY` | yes | Writes the meditation scripts |
+| `ENCRYPTION_KEY` | yes | From step 2 |
+| `CRON_SECRET` | yes | From step 2. Vercel sends it to cron routes automatically once set |
+| `NEXT_PUBLIC_APP_URL` | effectively | Your real domain, e.g. `https://lumsa.app` |
+| `ELEVENLABS_API_KEY` | effectively | Without it, playback falls back to a screen-reader voice |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | optional | Google Calendar |
+| `MICROSOFT_CLIENT_ID` / `_SECRET` | optional | Outlook / Teams |
+| `RESEND_API_KEY`, `EMAIL_FROM` | optional | Daily reminder email |
+
+`scripts/setup-vercel-env.sh` pushes everything from a local `.env.local` in one
+pass, rather than pasting twelve values into a form.
+
+> **Why `NEXT_PUBLIC_APP_URL` matters.** Without it the app falls back to
+> `VERCEL_URL`, which is a per-deployment hostname that changes on every push.
+> OAuth redirect URIs would never match what you registered, and every calendar
+> connection would fail.
+
+## 4. Deploy
+
+```bash
+npm i -g vercel
+vercel link
+./scripts/setup-vercel-env.sh     # pushes .env.local to Vercel
+vercel                            # preview deployment
+vercel --prod                     # production
+```
+
+Vercel builds production from your repo's **default branch**. This work is on
+`claude/new-session-ynkm88` — merge it first, or point the project at that
+branch in Settings → Git.
+
+## 5. Seed the Daily Light library
+
+Once the database exists, from your machine:
+
+```bash
+npm run seed:challenges -- --dry-run   # validates, writes nothing
+npm run seed:challenges                # upserts 43 challenges on slug
+```
+
+Needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`.
+Safe to re-run; it never duplicates.
+
+## 6. Calendars (optional, but it's the whole premise)
+
+Both need your **production** domain, which means doing them after step 4 if
+you don't have a custom domain yet.
+
+**Google** — [Cloud Console](https://console.cloud.google.com) → enable the
+Google Calendar API → OAuth 2.0 Client ID (Web application). Authorised redirect
+URI:
+
+```
+https://YOUR-DOMAIN/api/calendar/google/callback
+```
+
+**Microsoft** — [Azure Portal](https://portal.azure.com) → Entra ID → App
+registrations → New registration. Delegated permissions: `Calendars.Read`,
+`User.Read`, `offline_access`. Redirect URI (type *Web*):
+
+```
+https://YOUR-DOMAIN/api/calendar/microsoft/callback
+```
+
+These must match `NEXT_PUBLIC_APP_URL` character for character.
+
+## 7. Email (optional)
+
+Resend → verify your sending domain, then set `RESEND_API_KEY` and `EMAIL_FROM`.
+The default `hello@lumsa.app` will not send unless you own and verify it.
+
+---
+
+## Verifying the deploy
+
+A green build does **not** mean a working deploy — public env vars are compiled
+into the browser bundle, so a missing one ships a broken page from a successful
+build. Check in this order:
+
+1. Load `/` — should render in both light and dark.
+2. Load `/login` and submit an email. If the magic link doesn't arrive, it's
+   step 1's Redirect URLs.
+3. Open the link, complete onboarding.
+4. `/today` should generate a script within ~30s, then show "Preparing your
+   narration…" and swap in the audio player when synthesis finishes.
+5. Confirm Daily Light appears below the meditation.
+
+Cron routes can be triggered by hand:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://YOUR-DOMAIN/api/cron/generate
+curl -H "Authorization: Bearer $CRON_SECRET" https://YOUR-DOMAIN/api/cron/audio
+```
+
+Each returns JSON with counts. They are safe to run repeatedly — generation is
+idempotent per (user, local date), and audio synthesis is claimed atomically.
+
+## Why Pro, specifically
+
+Two independent reasons, either of which alone would force it:
+
+- **Cron frequency.** Hobby allows cron once per day. The audio worker runs
+  `*/10 * * * *` and the generator hourly — one schedule serving twenty-four
+  timezone cohorts. Neither can run on Hobby.
+- **Function duration.** The cron and synthesis routes declare
+  `maxDuration = 300`. Hobby caps functions at 60s; an ElevenLabs pass over a
+  15-minute script alone takes longer than that.
+
+## Costs, once live
+
+- **Claude** — fractions of a cent per user per day. The system prompt is a
+  frozen constant so it caches; check `cache_read_input_tokens` is non-zero.
+- **ElevenLabs** — the real number. A 15-minute script is ~9,000 characters, so
+  ~9,000 credits per user per day, and it scales with session length: a user on
+  15 minutes costs roughly three times one on 5. Model this before opening
+  signups. Character counts are logged per synthesis (`[tts] synthesized …`).

@@ -153,6 +153,11 @@ npm run typecheck
 npm run lint
 ```
 
+`supabase/tests/` holds schema and RLS tests that run the migrations against a
+stock Postgres with the Supabase surface stubbed. Worth running after any schema
+change — RLS is the only thing between one user's meditations and another's, and
+a policy that silently does nothing looks exactly like one that works.
+
 ### Daily Light
 
 A small daily act of kindness that sits below the meditation on Today — the
@@ -223,7 +228,8 @@ isolation, and a simulated year of daily selection against the real library.
 
 ## Deploying
 
-Vercel, with two caveats.
+See **[DEPLOY.md](DEPLOY.md)** for the full checklist. The short version, with
+two caveats.
 
 **Cron requires Pro.** Hobby allows one cron execution per day, which cannot
 serve users in more than one timezone. Three schedules are registered in
