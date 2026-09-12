@@ -27,6 +27,7 @@ import { runBatch } from "@/lib/batch";
 import { generationCooldownMs } from "@/lib/backoff";
 import { check, failureCount, section } from "./checks/assert";
 import { challengeChecks } from "./checks/challenges";
+import { envChecks } from "./checks/env";
 import type { NormalizedEvent } from "@/lib/calendar/signal";
 
 section("timezone");
@@ -134,6 +135,7 @@ void (async () => {
   await batchChecks();
   cooldownChecks();
   challengeChecks();
+  envChecks();
 
   const failures = failureCount();
   console.log(

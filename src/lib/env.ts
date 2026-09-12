@@ -12,8 +12,33 @@
  * module in a test or a build step doesn't explode on a missing key.
  */
 
+/**
+ * Public variables, referenced literally.
+ *
+ * This map is not decoration and must not be collapsed into a loop. Next.js
+ * inlines `process.env.NEXT_PUBLIC_*` into the browser bundle by static
+ * find-and-replace on the *literal* text — a dynamic `process.env[name]` lookup
+ * is left untouched, and `process.env` is an empty object in the browser. Read
+ * dynamically, every public variable is `undefined` on the client while the
+ * server sees it fine and the build stays green, so the failure only appears
+ * once a real user loads the page.
+ *
+ * Any new NEXT_PUBLIC_ variable has to be spelled out here too.
+ */
+const PUBLIC_ENV: Record<string, string | undefined> = {
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+};
+
+function read(name: string): string | undefined {
+  // Server-side values win when present; the map covers the client, where
+  // process.env is empty.
+  return process.env[name] ?? PUBLIC_ENV[name];
+}
+
 function required(name: string): string {
-  const value = process.env[name];
+  const value = read(name);
   if (!value) {
     throw new Error(
       `Missing required environment variable: ${name}. See .env.example.`,
@@ -23,7 +48,7 @@ function required(name: string): string {
 }
 
 function optional(name: string): string | undefined {
-  return process.env[name] || undefined;
+  return read(name) || undefined;
 }
 
 export const env = {
