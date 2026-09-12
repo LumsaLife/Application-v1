@@ -52,6 +52,21 @@ function optional(name: string): string | undefined {
   return read(name) || undefined;
 }
 
+/**
+ * Parse a boolean-ish environment variable.
+ *
+ * Deliberately forgiving. These values get typed into a dashboard form by hand,
+ * where a trailing space or a capital letter is invisible and a strict
+ * `=== "true"` comparison fails silently — you get the old behaviour with no
+ * error to explain why. This project has already lost a deploy cycle to an
+ * invisible leading space in a Vercel settings field.
+ */
+function flag(name: string): boolean {
+  const raw = read(name);
+  if (!raw) return false;
+  return ["true", "1", "yes", "on"].includes(raw.trim().toLowerCase());
+}
+
 export const env = {
   // --- Supabase -----------------------------------------------------------
   supabaseUrl: () => required("NEXT_PUBLIC_SUPABASE_URL"),
@@ -108,7 +123,10 @@ export const env = {
    * switched on, and the UI carries a banner whenever it is active. Never set
    * it in production.
    */
-  demoMode: () => optional("NEXT_PUBLIC_DEMO_MODE") === "true",
+  demoMode: () => flag("NEXT_PUBLIC_DEMO_MODE"),
+
+  /** Raw value, for the diagnostic route. */
+  demoModeRaw: () => read("NEXT_PUBLIC_DEMO_MODE"),
 
   // --- App ----------------------------------------------------------------
   appUrl: () =>

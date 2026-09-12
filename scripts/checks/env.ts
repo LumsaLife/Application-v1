@@ -64,3 +64,56 @@ export function envChecks(): void {
     true,
   );
 }
+
+/**
+ * Boolean env flags must survive being typed into a dashboard by hand.
+ *
+ * A strict `=== "true"` check fails silently on " true" or "True", giving you
+ * the old behaviour with no error to explain it. Vercel settings fields render
+ * leading whitespace invisibly, and this project has already lost a deploy
+ * cycle to exactly that.
+ */
+export function flagChecks(): void {
+  section("boolean env flag parsing");
+
+  const KEY = "NEXT_PUBLIC_DEMO_MODE";
+  const original = process.env[KEY];
+
+  // Imported lazily so the module picks up each process.env mutation.
+  const load = () => {
+    const path = require.resolve("@/lib/env");
+    delete require.cache[path];
+    return require("@/lib/env").env as { demoMode: () => boolean };
+  };
+
+  const cases: [string | undefined, boolean][] = [
+    ["true", true],
+    ["TRUE", true],
+    ["True", true],
+    [" true ", true],
+    ["1", true],
+    ["yes", true],
+    ["on", true],
+    ["false", false],
+    ["FALSE", false],
+    ["0", false],
+    ["no", false],
+    ["", false],
+    ["maybe", false],
+    [undefined, false],
+  ];
+
+  for (const [value, expected] of cases) {
+    if (value === undefined) delete process.env[KEY];
+    else process.env[KEY] = value;
+
+    check(
+      `${value === undefined ? "(unset)" : JSON.stringify(value)} → ${expected}`,
+      load().demoMode(),
+      expected,
+    );
+  }
+
+  if (original === undefined) delete process.env[KEY];
+  else process.env[KEY] = original;
+}

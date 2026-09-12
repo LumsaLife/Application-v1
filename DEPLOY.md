@@ -178,6 +178,25 @@ Claude and ElevenLabs credits. Set it on a preview deployment only. With the
 flag off or absent, `/login` is the gate again and `/api/auth/demo` returns 404
 — nothing to remove when you're done.
 
+### Demo mode isn't taking effect
+
+Hit `/api/auth/demo-status` on the deployment. It always responds, including
+when demo mode is off, and reports what the running build actually resolved:
+
+```json
+{ "demoModeEnabled": false, "rawValue": null, "diagnosis": "..." }
+```
+
+`rawValueQuoted` shows the value with quotes around it, so stray whitespace is
+visible. The flag accepts `true`, `1`, `yes` or `on`, in any case, with
+surrounding whitespace trimmed.
+
+The usual cause is that `NEXT_PUBLIC_DEMO_MODE` was set but the deployment was
+not rebuilt. Public variables are compiled into the bundle at build time —
+setting one changes nothing about an existing deployment. Redeploy after
+setting it, and make sure it is set for the environment you are actually
+visiting (Preview and Production are separate).
+
 ## Troubleshooting
 
 ### `No Output Directory named "public" found after the Build completed`
