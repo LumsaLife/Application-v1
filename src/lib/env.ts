@@ -29,6 +29,7 @@ const PUBLIC_ENV: Record<string, string | undefined> = {
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  NEXT_PUBLIC_DEMO_MODE: process.env.NEXT_PUBLIC_DEMO_MODE,
 };
 
 function read(name: string): string | undefined {
@@ -93,6 +94,21 @@ export const env = {
 
   // --- Cron ---------------------------------------------------------------
   cronSecret: () => required("CRON_SECRET"),
+
+  /**
+   * Demo mode — skips sign-in entirely.
+   *
+   * Visitors get a Supabase *anonymous* session instead of the magic-link
+   * flow: a real auth.uid(), so RLS, generation, journal and Daily Light all
+   * run on their normal code paths, and each visitor's data stays isolated
+   * from every other visitor's. A shared demo account would not give you that.
+   *
+   * This is still an auth bypass. Anyone with the URL gets a session and can
+   * spend your Claude and ElevenLabs credits, so it is off unless explicitly
+   * switched on, and the UI carries a banner whenever it is active. Never set
+   * it in production.
+   */
+  demoMode: () => optional("NEXT_PUBLIC_DEMO_MODE") === "true",
 
   // --- App ----------------------------------------------------------------
   appUrl: () =>

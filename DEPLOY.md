@@ -151,6 +151,33 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://YOUR-DOMAIN/api/cron/audio
 Each returns JSON with counts. They are safe to run repeatedly — generation is
 idempotent per (user, local date), and audio synthesis is claimed atomically.
 
+## Opening the preview without sign-in
+
+To let people (or yourself) straight into the app while previewing, set:
+
+```
+NEXT_PUBLIC_DEMO_MODE=true
+```
+
+and enable **Allow anonymous sign-ins** in Supabase under
+**Authentication → Sign In / Providers**.
+
+Visitors then get a Supabase *anonymous* session instead of the magic-link
+page: `/` → Begin → straight onto Today with a seeded mantra and intention. The
+banner at the top of every page links to **Restart onboarding** if you want to
+walk the real five-step flow.
+
+Anonymous sessions rather than one shared demo account is the important part.
+Each visitor gets a real `auth.uid()`, so every RLS policy, the generation
+pipeline, the journal and Daily Light run exactly as they do in production, and
+no visitor can see another's meditations. A shared login would put everyone in
+one pile and prove nothing about whether the real paths work.
+
+**It is still an auth bypass.** Anyone with the URL is inside and can spend your
+Claude and ElevenLabs credits. Set it on a preview deployment only. With the
+flag off or absent, `/login` is the gate again and `/api/auth/demo` returns 404
+— nothing to remove when you're done.
+
 ## Troubleshooting
 
 ### `No Output Directory named "public" found after the Build completed`

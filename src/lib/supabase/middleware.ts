@@ -3,11 +3,23 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 
 /** Routes reachable without a session. Everything else redirects to /login. */
-const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron", "/_next", "/favicon"];
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/auth", // magic-link callback and sign-out
+  "/api/auth", // demo entry — see below
+  "/api/cron", // authenticates with a bearer secret, not a session
+  "/_next",
+  "/favicon",
+];
 
 /**
  * Refreshes the Supabase session cookie on every request and gates private
- * routes. Called from middleware.ts at the project root.
+ * routes. Called from src/middleware.ts.
+ *
+ * `/api/auth` has to be public. In demo mode this is where unauthenticated
+ * visitors are sent, and gating it would mean redirecting it to itself — an
+ * infinite loop. The route carries its own demo-mode check and 404s when the
+ * flag is off, so that guard is the real gate rather than this list.
  */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -41,7 +53,11 @@ export async function updateSession(request: NextRequest) {
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+
+    // Demo mode sends visitors through anonymous sign-in instead of the
+    // magic-link page, so the app opens straight away. /login still exists and
+    // becomes the gate again the moment the flag is off.
+    url.pathname = env.demoMode() ? "/api/auth/demo" : "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }

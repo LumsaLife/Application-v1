@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
+import { DemoBanner } from "@/components/DemoBanner";
 import { ThemeScript } from "@/components/ThemeScript";
 import "./globals.css";
 
@@ -47,6 +48,7 @@ export default function RootLayout({
         <ThemeScript />
       </head>
       <body className={`${fraunces.variable} ${inter.variable} antialiased`}>
+        <DemoBanner />
         {children}
       </body>
     </html>

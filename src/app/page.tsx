@@ -37,7 +37,7 @@ export default function LandingPage() {
 
           <div className="flex flex-col items-center gap-4 pt-2">
             <Link
-              href="/login"
+              href="/today"
               className="inline-flex items-center justify-center rounded-full bg-gold px-7 py-3 text-sm font-medium text-canvas transition-all duration-200 hover:bg-gold-bright active:scale-[0.985]"
             >
               Begin
