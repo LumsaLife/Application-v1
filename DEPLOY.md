@@ -151,6 +151,37 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://YOUR-DOMAIN/api/cron/audio
 Each returns JSON with counts. They are safe to run repeatedly — generation is
 idempotent per (user, local date), and audio synthesis is claimed atomically.
 
+## Troubleshooting
+
+### `No Output Directory named "public" found after the Build completed`
+
+Vercel is treating the project as a **static site** instead of a Next.js app.
+The build succeeds, then Vercel looks for a static output directory — which a
+Next.js app does not produce — and fails.
+
+It means the project's **Framework Preset is "Other"**, not "Next.js". Vercel
+normally auto-detects Next.js from `package.json`; detection gets skipped when a
+project is created with the preset chosen manually, or when the Root Directory
+points somewhere without a `package.json`.
+
+`vercel.json` pins `"framework": "nextjs"`, which should settle it. If the error
+survives a redeploy, fix it on the project itself:
+
+- **Settings → General → Framework Preset** → `Next.js`
+- **Settings → General → Root Directory** → empty, or `./`
+- Leave **Output Directory** on its default. Do not set it to `.next` — Next.js
+  output is handled by Vercel's framework builder, and overriding it breaks
+  routing and serverless functions.
+
+Then redeploy. A cached build will not pick up a settings change on its own.
+
+### Build succeeds but the site is broken in the browser
+
+Almost always a missing `NEXT_PUBLIC_*` variable. Those are compiled into the
+browser bundle at build time, so a missing one produces a green build and a page
+that throws on load. Set them, then **redeploy** — changing an environment
+variable does not rebuild by itself.
+
 ## Why Pro, specifically
 
 Two independent reasons, either of which alone would force it:

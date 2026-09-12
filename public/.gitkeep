@@ -1,0 +1,3 @@
+Static assets served from the site root (e.g. /robots.txt, /og-image.png).
+Kept in git so the directory exists in every checkout — Next.js expects it,
+and an untracked empty directory made local and deployed trees differ.
