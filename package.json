@@ -2,7 +2,7 @@
   "name": "lumsa",
   "version": "0.1.0",
   "private": true,
-  "description": "Lumsa \u2014 a spiritual meditation companion that reflects your actual day back to you.",
+  "description": "Lumsa — a spiritual meditation companion that reflects your actual day back to you.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -17,7 +17,7 @@
     "@anthropic-ai/sdk": "^0.71.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.58.0",
-    "next": "15.5.4",
+    "next": "15.5.9",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "resend": "^6.1.2",
